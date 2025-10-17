@@ -1552,34 +1552,6 @@
         }
     </script>
 
-    <!-- Load AdSense asynchronously -->
-    <script>
-        // Defer AdSense loading
-        window.addEventListener('load', function() {
-            const adsScript = document.createElement('script');
-            adsScript.async = true;
-            adsScript.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4350173654562949';
-            adsScript.crossOrigin = 'anonymous';
-            document.head.appendChild(adsScript);
-        });
-    </script>
-
-    <!-- Google Analytics - Load after everything else -->
-    <script>
-        window.addEventListener('load', function() {
-            // Load GA after page load
-            const gaScript = document.createElement('script');
-            gaScript.async = true;
-            gaScript.src = 'https://www.googletagmanager.com/gtag/js?id=GA_MEASUREMENT_ID';
-            document.head.appendChild(gaScript);
-            
-            gaScript.onload = function() {
-                window.dataLayer = window.dataLayer || [];
-                function gtag(){dataLayer.push(arguments);}
-                gtag('js', new Date());
-                gtag('config', 'GA_MEASUREMENT_ID');
-            };
-        });
-    </script>
+    
 </body>
 </html>
