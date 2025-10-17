@@ -1,0 +1,609 @@
+# Laravel ke liye Docker - Complete Beginner Guide
+
+## 📚 Part 1: Docker Basics Samajhna
+
+### Docker Kya Hai?
+Docker ek **containerization platform** hai jo tumhare application ko ek **portable box** me pack kar deta hai. Is box me sab kuch hota hai - code, dependencies, settings - jo tumhare app ko chalane ke liye chahiye.
+
+### Key Concepts
+
+#### 1️⃣ **Image** (Recipe/Template)
+- Ek **read-only template** hai
+- Isme sab instructions hoti hain ki container kaise banana hai
+- Jaise: PHP install karo, Nginx install karo, code copy karo
+- **Example**: `php:8.1-fpm` image
+
+#### 2️⃣ **Container** (Running Instance)
+- Image se bana hua **running application**
+- Jaise recipe se bana hua actual khana
+- Multiple containers ek hi image se ban sakte hain
+- **Example**: Tumhara Laravel app ek container me run ho raha hai
+
+#### 3️⃣ **Dockerfile** (Recipe)
+- Text file jisme **step-by-step instructions** hoti hain
+- Batati hai ki image kaise build karni hai
+```dockerfile
+FROM php:8.1-fpm        # Base image
+RUN apt-get update      # Commands chalao
+COPY . /app             # Files copy karo
+CMD ["php-fpm"]         # Container start hone par ye command chalao
+```
+
+#### 4️⃣ **Docker Compose** (Orchestration)
+- **Multiple containers** ko ek saath manage karta hai
+- YAML file me services define karte hain
+- Ek command se sab start/stop ho jata hai
+
+#### 5️⃣ **Volume** (Data Storage)
+- Container delete hone par bhi **data safe** rehta hai
+- Database data, uploaded files store karne ke liye
+- Host machine aur container ke beech data share karne ke liye
+
+#### 6️⃣ **Network** (Container Communication)
+- Containers ek dusre se **baat kar sakte hain**
+- Laravel app → MySQL database connection
+- Internal network automatically banta hai Docker Compose me
+
+---
+
+## 🛠️ Part 2: Installation
+
+### Windows
+1. [Docker Desktop](https://www.docker.com/products/docker-desktop) download karo
+2. Install karo (WSL 2 enable karna padega)
+3. Docker Desktop open karo
+
+### Mac
+1. [Docker Desktop for Mac](https://www.docker.com/products/docker-desktop) download karo
+2. Install karo aur open karo
+
+### Linux (Ubuntu/Debian)
+```bash
+# Docker install
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+
+# Docker Compose install
+sudo apt-get install docker-compose
+
+# Current user ko docker group me add karo
+sudo usermod -aG docker $USER
+```
+
+### Verify Installation
+```bash
+docker --version          # Docker version check
+docker-compose --version  # Docker Compose version check
+```
+
+---
+
+## 📁 Part 3: Laravel Project Structure
+
+```
+my-laravel-app/
+├── app/
+├── public/
+├── storage/
+├── .env
+├── composer.json
+├── Dockerfile           ← Ye tum banao
+├── docker-compose.yml   ← Ye tum banao
+├── nginx.conf           ← Ye tum banao
+└── .dockerignore        ← Ye tum banao
+```
+
+---
+
+## 🔨 Part 4: Files Banana (Step by Step)
+
+### Step 1: `.dockerignore` File
+```
+/vendor
+/node_modules
+.git
+.env
+/storage/*.key
+.DS_Store
+```
+
+### Step 2: `nginx.conf` File
+```nginx
+server {
+    listen 80;
+    server_name localhost;
+    root /var/www/html/public;
+
+    index index.php index.html;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \.php$ {
+        include fastcgi_params;
+        fastcgi_pass 127.0.0.1:9000;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    }
+
+    location ~ /\.ht {
+        deny all;
+    }
+}
+```
+
+### Step 3: `Dockerfile`
+```dockerfile
+# Stage 1: Composer Dependencies
+FROM composer:2 AS vendor
+
+WORKDIR /app
+COPY . .
+RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-scripts
+
+# Stage 2: Application Container
+FROM php:8.1-fpm
+
+# System dependencies install
+RUN apt-get update && apt-get install -y \
+    git curl zip unzip libpng-dev libzip-dev libonig-dev nginx \
+    && docker-php-ext-install pdo_mysql mbstring zip exif pcntl bcmath gd \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /var/www/html
+
+# Application code copy
+COPY . .
+COPY --from=vendor /app/vendor ./vendor
+
+# Permissions set
+RUN chown -R www-data:www-data /var/www/html \
+    && chmod -R 755 /var/www/html/storage /var/www/html/bootstrap/cache
+
+# Nginx config copy
+COPY ./nginx.conf /etc/nginx/sites-available/default
+
+EXPOSE 80
+
+# Start services
+CMD ["sh", "-c", "php-fpm -D && nginx -g 'daemon off;'"]
+```
+
+### Step 4: `docker-compose.yml`
+```yaml
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: laravel_app
+    ports:
+      - "8080:80"
+    volumes:
+      - .:/var/www/html
+    environment:
+      - APP_ENV=local
+      - APP_DEBUG=true
+    depends_on:
+      - db
+
+  db:
+    image: mysql:8
+    container_name: laravel_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: laravel
+      MYSQL_USER: laravel
+      MYSQL_PASSWORD: secret
+    ports:
+      - "3307:3306"
+    volumes:
+      - dbdata:/var/lib/mysql
+
+volumes:
+  dbdata:
+```
+
+### Step 5: `.env` File Update
+```env
+DB_CONNECTION=mysql
+DB_HOST=db              # Container name
+DB_PORT=3306            # Internal port
+DB_DATABASE=laravel
+DB_USERNAME=laravel
+DB_PASSWORD=secret
+```
+
+---
+
+## 🚀 Part 5: Important Commands
+
+### Basic Docker Commands
+
+```bash
+# Images
+docker images                    # Sab images dekho
+docker build -t myapp .         # Image build karo
+docker rmi image_name           # Image delete karo
+docker pull php:8.1-fpm         # Image download karo
+
+# Containers
+docker ps                        # Running containers
+docker ps -a                     # Sab containers (stopped bhi)
+docker run image_name           # Container start karo
+docker stop container_name      # Container band karo
+docker rm container_name        # Container delete karo
+docker logs container_name      # Logs dekho
+docker exec -it container_name bash  # Container me enter karo
+
+# Cleanup
+docker system prune             # Unused data delete karo
+docker volume prune             # Unused volumes delete
+```
+
+### Docker Compose Commands
+
+```bash
+# Start
+docker-compose up               # Containers start karo (foreground)
+docker-compose up -d            # Background me start karo
+docker-compose up --build       # Rebuild aur start karo
+
+# Stop
+docker-compose down             # Containers stop aur remove karo
+docker-compose down -v          # Volumes bhi delete karo
+
+# Status
+docker-compose ps               # Running services dekho
+docker-compose logs             # Sab services ke logs
+docker-compose logs app         # Specific service ke logs
+docker-compose logs -f          # Live logs (follow mode)
+
+# Execute Commands
+docker-compose exec app bash                    # Container me bash shell
+docker-compose exec app php artisan migrate     # Artisan command chalao
+docker-compose exec app composer install        # Composer command
+
+# Restart
+docker-compose restart          # Services restart karo
+docker-compose restart app      # Specific service restart
+```
+
+---
+
+## 🎯 Part 6: Laravel Project Setup (Complete Flow)
+
+### Fresh Laravel Project ke liye:
+
+```bash
+# 1. Laravel project banao (local Composer se)
+composer create-project laravel/laravel my-app
+cd my-app
+
+# 2. Docker files banao (upar wali files copy karo)
+# Dockerfile, docker-compose.yml, nginx.conf, .dockerignore
+
+# 3. .env file update karo (database settings)
+
+# 4. Containers build aur start karo
+docker-compose up --build -d
+
+# 5. Container me artisan commands chalao
+docker-compose exec app php artisan key:generate
+docker-compose exec app php artisan migrate
+docker-compose exec app php artisan db:seed
+
+# 6. Browser me check karo
+# http://localhost:8080
+```
+
+### Existing Laravel Project ke liye:
+
+```bash
+# 1. Project folder me jao
+cd existing-laravel-project
+
+# 2. Docker files add karo
+
+# 3. vendor folder delete karo (agar hai to)
+rm -rf vendor
+
+# 4. .env file update karo
+
+# 5. Build aur start
+docker-compose up --build -d
+
+# 6. Dependencies install karo (container ke andar)
+docker-compose exec app composer install
+
+# 7. Application setup
+docker-compose exec app php artisan key:generate
+docker-compose exec app php artisan migrate
+docker-compose exec app php artisan storage:link
+
+# 8. Permissions fix karo
+docker-compose exec app chown -R www-data:www-data /var/www/html/storage
+docker-compose exec app chmod -R 775 /var/www/html/storage
+```
+
+---
+
+## 🐛 Part 7: Common Problems & Solutions
+
+### Problem 1: Port Already in Use
+```
+Error: Bind for 0.0.0.0:8080 failed: port is already allocated
+```
+**Solution:**
+```bash
+# Option 1: docker-compose.yml me port change karo
+ports:
+  - "8081:80"  # 8080 ki jagah 8081
+
+# Option 2: Running container stop karo
+docker ps
+docker stop container_name
+```
+
+### Problem 2: Permission Denied (storage/logs)
+```
+Error: The stream or file could not be opened in append mode
+```
+**Solution:**
+```bash
+docker-compose exec app chmod -R 775 storage
+docker-compose exec app chown -R www-data:www-data storage bootstrap/cache
+```
+
+### Problem 3: Database Connection Failed
+```
+SQLSTATE[HY000] [2002] Connection refused
+```
+**Solution:**
+```bash
+# 1. .env check karo
+DB_HOST=db  # Container name hona chahiye, localhost nahi
+
+# 2. Database container check karo
+docker-compose ps
+docker-compose logs db
+
+# 3. Restart karo
+docker-compose restart db
+```
+
+### Problem 4: Composer Dependencies Missing
+```
+Error: Class 'Illuminate\Foundation\Application' not found
+```
+**Solution:**
+```bash
+# Container ke andar composer install
+docker-compose exec app composer install
+
+# Ya rebuild karo
+docker-compose down
+docker-compose up --build
+```
+
+### Problem 5: 502 Bad Gateway
+```
+Nginx shows 502 Bad Gateway
+```
+**Solution:**
+```bash
+# PHP-FPM check karo
+docker-compose exec app ps aux | grep php-fpm
+
+# Restart container
+docker-compose restart app
+
+# Logs check karo
+docker-compose logs app
+```
+
+### Problem 6: Database Tables Not Creating
+```
+Migration runs but tables not visible
+```
+**Solution:**
+```bash
+# Correct database me migrate ho raha hai ya nahi check karo
+docker-compose exec app php artisan migrate:status
+
+# Fresh migration
+docker-compose exec app php artisan migrate:fresh
+
+# Database me direct jao aur check karo
+docker-compose exec db mysql -u laravel -psecret laravel
+mysql> SHOW TABLES;
+```
+
+---
+
+## 🔍 Part 8: Debugging Tips
+
+### Container ke Andar Jaana
+```bash
+# Bash shell
+docker-compose exec app bash
+
+# Root user se jaana
+docker-compose exec -u root app bash
+
+# Database me jaana
+docker-compose exec db mysql -u laravel -psecret laravel
+```
+
+### Logs Dekhna
+```bash
+# Real-time logs
+docker-compose logs -f
+
+# Last 100 lines
+docker-compose logs --tail=100
+
+# Specific service
+docker-compose logs -f app
+docker-compose logs -f db
+```
+
+### Container Status Check
+```bash
+# Resources usage
+docker stats
+
+# Container inspect
+docker inspect container_name
+
+# Network check
+docker network ls
+docker network inspect my-laravel-app_default
+```
+
+---
+
+## 🎓 Part 9: Daily Development Workflow
+
+### Morning (Start Work)
+```bash
+cd my-laravel-app
+docker-compose up -d        # Containers start karo
+docker-compose logs -f      # Logs dekho (optional)
+```
+
+### Development (During Work)
+```bash
+# Code changes - auto reflect honge (volumes ki wajah se)
+
+# Artisan commands
+docker-compose exec app php artisan make:controller UserController
+docker-compose exec app php artisan migrate
+docker-compose exec app php artisan tinker
+
+# Composer packages
+docker-compose exec app composer require package-name
+docker-compose exec app composer update
+```
+
+### Evening (End Work)
+```bash
+docker-compose down         # Containers stop karo
+# Ya running rehne do - resources allow kare to
+```
+
+### Weekly Maintenance
+```bash
+# Unused data cleanup
+docker system prune -a
+
+# Volumes cleanup (careful - data delete hoga!)
+docker volume prune
+```
+
+---
+
+## 📊 Part 10: Production vs Development
+
+### Development Settings (docker-compose.yml)
+```yaml
+services:
+  app:
+    volumes:
+      - .:/var/www/html    # Live code changes
+    environment:
+      - APP_ENV=local
+      - APP_DEBUG=true     # Debug mode ON
+```
+
+### Production Settings
+```yaml
+services:
+  app:
+    # No volumes - code image me hi hai
+    environment:
+      - APP_ENV=production
+      - APP_DEBUG=false    # Debug mode OFF
+    restart: always        # Auto restart on crash
+```
+
+---
+
+## 🎯 Part 11: Useful Aliases (Time Bachao)
+
+Apne `.bashrc` ya `.zshrc` me add karo:
+
+```bash
+# Docker
+alias dc='docker-compose'
+alias dcup='docker-compose up -d'
+alias dcdown='docker-compose down'
+alias dcl='docker-compose logs -f'
+alias dcp='docker-compose ps'
+
+# Laravel in Docker
+alias artisan='docker-compose exec app php artisan'
+alias composer='docker-compose exec app composer'
+alias tinker='docker-compose exec app php artisan tinker'
+alias phpunit='docker-compose exec app php artisan test'
+
+# Quick commands
+alias migrate='docker-compose exec app php artisan migrate'
+alias seed='docker-compose exec app php artisan db:seed'
+alias fresh='docker-compose exec app php artisan migrate:fresh --seed'
+```
+
+**Usage:**
+```bash
+dcup                    # Instead of docker-compose up -d
+artisan make:model User # Instead of docker-compose exec app php artisan make:model User
+migrate                 # Instead of docker-compose exec app php artisan migrate
+```
+
+---
+
+## 🚀 Part 12: Next Steps
+
+### Intermediate Level:
+1. Multiple environments (dev, staging, prod)
+2. Docker networks customize karna
+3. Custom PHP settings (php.ini)
+4. Redis/Queue workers add karna
+5. Node.js/NPM container for frontend
+
+### Advanced Level:
+1. Multi-stage builds optimize karna
+2. Docker secrets for sensitive data
+3. CI/CD pipeline (GitHub Actions, GitLab CI)
+4. Kubernetes me deploy karna
+5. Monitoring aur logging (ELK stack)
+
+---
+
+## 📚 Resources
+
+- **Official Docs**: https://docs.docker.com/
+- **Docker Hub**: https://hub.docker.com/ (Images search)
+- **Laravel Sail**: Laravel's official Docker solution
+- **Practice**: https://www.katacoda.com/courses/docker (Interactive tutorials)
+
+---
+
+## ✅ Checklist: Tumne Seekh Liya?
+
+- [ ] Docker, Image, Container ka difference samajh aaya
+- [ ] Basic commands chala sakte ho
+- [ ] Laravel project Docker me run kar sakte ho
+- [ ] Common errors fix kar sakte ho
+- [ ] Logs dekh sakte ho aur debug kar sakte ho
+- [ ] Database connect kar sakte ho
+- [ ] Artisan commands container me chala sakte ho
+- [ ] docker-compose.yml customize kar sakte ho
+
+Sab check ho gaya? **Congratulations! Tum ab Docker basics jaan gaye ho!** 🎉
+
+Ab practice karo aur errors se daro mat - wo seekhne ka best tarika hai! 💪
